@@ -1,16 +1,15 @@
 import numpy as np
 import matplotlib.pyplot as pl
-import wavefront as wf
 import scipy.special as sp
 import skimage.transform
 import time
-import fft
+import pymcao.fft as fft
 from tqdm import tqdm
 import scipy.ndimage
 import multiprocessing
-import atmosphere
-import zern
-import util
+import pymcao.atmosphere as atmosphere
+import pymcao.zern as zern
+import pymcao.util as util
 import logging
 import warnings
 warnings.filterwarnings('ignore', '.*output shape of zoom.*')
@@ -74,8 +73,7 @@ class WFS(object):
         if (self.subapertures_geometry == 'square'):
             self.npix_pupil_subaperture = int(np.ceil((self.npix_pupil - self.gap_subaperture * self.n_subapertures_horizontal) / self.n_subapertures_horizontal))
             self.enhancement = (self.npix_pupil_subaperture + self.gap_subaperture) * self.n_subapertures_horizontal * (self.simulation_pixel_size / self.wfs_pixel_size / self.npix_wfs_subaperture)           
-            
-        self.npix_pupil = int(self.enhancement * self.wfs_pixel_size / self.simulation_pixel_size * self.npix_wfs_subaperture)
+            self.npix_pupil = int(self.enhancement * self.wfs_pixel_size / self.simulation_pixel_size * self.npix_wfs_subaperture)
                                     
         # Size in cm of each pixel in the pupil plane
         self.pupil_pixel_size_cm = self.telescope_diameter / self.npix_pupil        
@@ -114,6 +112,11 @@ class WFS(object):
         self.logger = logging.getLogger("WFS  ")
         self.logger.setLevel(logging.INFO)
         self.logger.handlers = []
+
+        ch = logging.StreamHandler(config.logfile)        
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(message)s')
+        ch.setFormatter(formatter)
+        self.logger.addHandler(ch)
 
         ch = logging.StreamHandler()        
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(message)s')
@@ -444,6 +447,11 @@ class WFS(object):
         return x2, y2
 
     def psf_from_wavefronts(self, apertures, wavefront):
+        """
+        Get PSF from wavefronts. 
+        Already checked that if wavefront is zero, this returns PSFs that are correctly
+        at the diffraction limit of the subaperture.
+        """
 
         half = int((self.npix_overfill - self.npix_pupil)/2)
         self.wfbig[half:half+self.npix_pupil,half:half+self.npix_pupil] = wavefront
@@ -456,7 +464,7 @@ class WFS(object):
         
         powft = np.real(np.conj(ft) * ft)
 
-        sorted = np.roll(np.roll(powft, self.npix_overfill//2, axis=1), self.npix_overfill//2, axis=2)
+        sorted = np.fft.fftshift(powft, axes=(1,2))
                 
         return sorted[:, half:half+self.npix_pupil,half:half+self.npix_pupil]
 

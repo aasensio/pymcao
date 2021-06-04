@@ -12,6 +12,7 @@ try:
 except:
     TORCH_AVAILABLE = False
 
+__all__ = ['FFT']
 
 class FFT(object):
 

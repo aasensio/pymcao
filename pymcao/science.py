@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as pl
 import logging
 import time
-import fft
+import pymcao.fft as fft
 from itertools import product
 
 __all__ = ['Science']
@@ -14,6 +14,7 @@ class Science(object):
     def __init__(self, config, zernikes = None, aperture = None):
 
         self.n_science_fov = config.n_science_fov
+        self.science_fov = config.science_fov / 206265.0  # in radians
         self.n_sci_directions = self.n_science_fov * self.n_science_fov
         self.npix_overfill = config.npix_overfill
         self.fft_mode = config.fft_mode
@@ -33,6 +34,11 @@ class Science(object):
         self.logger = logging.getLogger("SCI  ")
         self.logger.setLevel(logging.INFO)
         self.logger.handlers = []
+
+        ch = logging.StreamHandler(config.logfile)        
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(message)s')
+        ch.setFormatter(formatter)
+        self.logger.addHandler(ch)
 
         ch = logging.StreamHandler()        
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(message)s')
@@ -55,7 +61,8 @@ class Science(object):
 
         if (self.verbose):
             self.logger.info('Science camera ready')
-        
+            self.logger.info("FOV of science camera : {0} arcsec".format(206265.*self.science_fov))
+            
     def init_fft(self):
         
         # Define the plans for the FFT        
@@ -67,7 +74,7 @@ class Science(object):
         self.fft_forward_image = fft.FFT((self.n_sci_directions, self.npix_pupil, self.npix_pupil), mode=self.fft_mode, direction='forward', axes=(1,2), threads=self.n_cpus)
         self.fft_backward_multi = fft.FFT((self.n_sci_directions, self.npix_pupil, self.npix_pupil), mode=self.fft_mode, direction='backward', axes=(1,2), threads=self.n_cpus)
 
-    def degrade_image(self, uncorrected_wavefront_zernike, wavefront_zernike, images):
+    def degrade_image(self, images, uncorrected_wavefront_zernike, wavefront_zernike=None):
         """
         Degrade the science image using the wavefronts obtained for many
         observing directions
@@ -119,32 +126,34 @@ class Science(object):
         # DMs corrected image
         #-------------------------
 
-        # First compute PSFs
-        self.wavefronts = np.einsum('ij,jkl->ikl', wavefront_zernike, self.Z)
+        if (wavefront_zernike is not None):
 
-        half = int((self.npix_overfill - self.npix_pupil)/2)
-        self.wfbig[:, half:half+self.npix_pupil,half:half+self.npix_pupil] = self.wavefronts
-                
-        self.illum[half:half+self.npix_pupil,half:half+self.npix_pupil] = self.aperture
-                
-        phase = np.exp(self.wfbig*(0.+1.j))
-                
-        ft = self.fft_forward_overfill(self.illum[None,:,:] * phase)
-        
-        powft = np.real(np.conj(ft) * ft)
+            # First compute PSFs
+            self.wavefronts = np.einsum('ij,jkl->ikl', wavefront_zernike, self.Z)
 
-        self.psfs = np.roll(np.roll(powft, self.npix_overfill//2, axis=1), self.npix_overfill//2, axis=2)                    
-        
-        self.psfs = self.psfs[:, half:half+self.npix_pupil,half:half+self.npix_pupil]
-        
-        # Now carry out the convolution
-        psf_fft = self.fft_forward_psf(self.psfs)
-        im_fft = self.fft_forward_image(images * self.window[None,:,:])
+            half = int((self.npix_overfill - self.npix_pupil)/2)
+            self.wfbig[:, half:half+self.npix_pupil,half:half+self.npix_pupil] = self.wavefronts
+                    
+            self.illum[half:half+self.npix_pupil,half:half+self.npix_pupil] = self.aperture
+                    
+            phase = np.exp(self.wfbig*(0.+1.j))
+                    
+            ft = self.fft_forward_overfill(self.illum[None,:,:] * phase)
+            
+            powft = np.real(np.conj(ft) * ft)
 
-        images_final = np.fft.fftshift(np.real(self.fft_backward_multi(psf_fft * im_fft)), axes=(1,2))
-        
-        # Unpatch the images to reconstruct the final image
-        self.science_degraded_corrected = self.unpatchify(images_final)
+            self.psfs = np.roll(np.roll(powft, self.npix_overfill//2, axis=1), self.npix_overfill//2, axis=2)                    
+            
+            self.psfs = self.psfs[:, half:half+self.npix_pupil,half:half+self.npix_pupil]
+            
+            # Now carry out the convolution
+            psf_fft = self.fft_forward_psf(self.psfs)
+            im_fft = self.fft_forward_image(images * self.window[None,:,:])
+
+            images_final = np.fft.fftshift(np.real(self.fft_backward_multi(psf_fft * im_fft)), axes=(1,2))
+            
+            # Unpatch the images to reconstruct the final image
+            self.science_degraded_corrected = self.unpatchify(images_final)
                         
 
     def unpatchify(self, patches):        

@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as pl
 
 
+__all__ = ['show_mcao', 'show_scao']
+
 def show_mcao(wfs, dms, sci, atm):
     """
     Show the results of the calculation

@@ -2,6 +2,8 @@ from pyqtgraph.Qt import QtCore, QtGui
 import numpy as np
 import pyqtgraph as pg
 
+__all__ = ['GUI']
+
 class GUI(object):
 
     def __init__(self):

@@ -3,6 +3,8 @@ import logging
 import zmq
 import time
 
+__all__ = ['Comm']
+
 class ZmqSubProcess:
     def __init__(self, port=None):        
         ctx = zmq.Context.instance()

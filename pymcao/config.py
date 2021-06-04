@@ -31,6 +31,10 @@ class Config(object):
             self.read_configuration(self.configuration_file)
 
         self.operation_mode = self.config_dict['global properties']['operation mode'].lower()
+
+        self.log_filename = self.config_dict['global properties']['log file']
+
+        self.logfile = open(self.log_filename, 'w')
         
         # Arguments for WFS
         
@@ -54,7 +58,7 @@ class Config(object):
         # Arguments for atmosphere
         self.n_stars = int(self.config_dict['wfs']['number of directions'])
                         
-        self.fov = u.Quantity(self.config_dict['wfs']['field of view of mcao']).to(u.arcsec).value
+        self.fov = u.Quantity(self.config_dict['wfs']['field of view']).to(u.arcsec).value
 
         self.phasescreen_mode = self.config_dict['atmosphere']['mode']
 
@@ -95,6 +99,7 @@ class Config(object):
 
         self.timestep = u.Quantity(self.config_dict['global properties']['timestep']).to(u.s).value
         self.n_science_fov = int(self.config_dict['science']['number of horizontal patches in the fov for psf calculation'])
+        self.science_fov = u.Quantity(self.config_dict['science']['field of view']).to(u.arcsec).value
         self.fill_fraction = float(self.config_dict['wfs']['fill fraction of subaperture to be active'])
 
         self.svd_thresholding = float(self.config_dict['numerical']['svd thresholding'])

@@ -38,6 +38,11 @@ class DM(object):
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
 
+        ch = logging.StreamHandler(config.logfile)        
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(message)s')
+        ch.setFormatter(formatter)
+        self.logger.addHandler(ch)
+
         if (self.verbose):            
             self.logger.info("Number of heights : {0} -> {1} km".format(self.nHeight, self.heights * 1e-3))
             self.logger.info("FOV: {0} arcsec".format(206265.*self.fov))

@@ -1,17 +1,19 @@
 import numpy as np
 import matplotlib.pyplot as pl
 import glob
-import projection
-import wavefront as wf
+import pymcao.projection as projection
 import uuid
 import pathlib
 import scipy.special as sp
 from tqdm import tqdm
 import logging
-import phase_screens
+import pymcao.phase_screens as phase_screens
 import time
-import fft
+import pymcao.fft as fft
+import pymcao.util as util
 import pickle
+
+__all__ = ['Atmosphere']
 
 def even(x):
     return x%2 == 0
@@ -37,9 +39,15 @@ class Atmosphere(object):
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
 
+        ch = logging.StreamHandler(config.logfile)        
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(message)s')
+        ch.setFormatter(formatter)
+        self.logger.addHandler(ch)
+
         self.nHeight = len(config.turb_heights)
         self.n_stars = config.n_stars
         self.fov = config.fov / 206265.0        # in radians
+        self.science_fov = config.science_fov / 206265.0  # in radians
         self.heights = config.turb_heights * 1e3
         self.telescope_diameter = config.telescope_diameter
         self.verbose = config.verbose
@@ -101,7 +109,7 @@ class Atmosphere(object):
         if (self.verbose):            
             self.logger.info("Zernike modes: {0}".format(self.n_zernike))
             self.logger.info("Number of heights : {0} -> {1} km".format(self.nHeight, self.heights * 1e-3))
-            self.logger.info("FOV: {0} arcsec".format(206265.*self.fov))
+            self.logger.info("FOV of AO : {0} arcsec".format(206265.*self.fov))
             self.logger.info("Number of stars : {0}".format(self.n_stars))
             
         # Define the position of the line of sights so that we have one central direction and the rest
@@ -110,19 +118,27 @@ class Atmosphere(object):
         # beta : scaling, so that the radius of the meta-pupil and of the footprint are related by beta=R(metapupil)/R(footprint)
         # angle : azimuthal angle of the line of sight
         for i in range(self.nHeight):
-            for j in range(self.n_stars-1):
+            self.t[i,0] = 0.0
+            self.beta[i,0] = self.DMetapupil[i] / self.telescope_diameter
+            self.angle[i,0] = 0.0
+            for j in range(1,self.n_stars-1,1):
                 self.t[i,j] = (self.heights[i] * self.fov) / self.DMetapupil[i]
                 self.beta[i,j] = self.DMetapupil[i] / self.telescope_diameter
                 self.angle[i,j] = j * 2.0 * np.pi / (self.n_stars - 1.0)
-            self.t[i,-1] = 0.0
-            self.beta[i,-1] = self.DMetapupil[i] / self.telescope_diameter
-            self.angle[i,-1] = 0.0
         
         # Check if the projection matrices for this specific configuration exists. If it does, read it from the file
         # If not, compute them
         
         # First create the directory where all matrices will be saved
         p = pathlib.Path('matrices/')
+        p.mkdir(parents=True, exist_ok=True)
+
+        # First create the directory where all matrices will be saved
+        p = pathlib.Path('matrices_science/')
+        p.mkdir(parents=True, exist_ok=True)
+
+        # First create the directory where all matrices will be saved
+        p = pathlib.Path('screens/')
         p.mkdir(parents=True, exist_ok=True)
 
         if (self.projection_exists() == 0):
@@ -134,10 +150,10 @@ class Atmosphere(object):
         self.a = {}        
                 
         # Science FOV
-        self.border_science_fov = self.fov * np.sin(np.pi/4.0)
-        x_science = self.border_science_fov / self.n_science_fov * (0.5 + np.arange(self.n_science_fov)) - self.border_science_fov / 2.0
-        y_science = self.border_science_fov / self.n_science_fov * (0.5 + np.arange(self.n_science_fov)) - self.border_science_fov / 2.0
-        self.patch_size_science = self.border_science_fov / self.n_science_fov
+        #self.border_science_fov = self.fov * np.sin(np.pi/4.0)
+        x_science = self.science_fov / self.n_science_fov * (0.5 + np.arange(self.n_science_fov)) - self.science_fov / 2.0
+        y_science = self.science_fov / self.n_science_fov * (0.5 + np.arange(self.n_science_fov)) - self.science_fov / 2.0
+        self.patch_size_science = self.science_fov / self.n_science_fov
                 
         self.x_science, self.y_science = np.meshgrid(x_science, y_science)
 
@@ -342,7 +358,7 @@ class Atmosphere(object):
         if (not self.MComputed):
             self.M = np.zeros((self.n_zernike,self.n_zernike,self.nHeight,self.n_stars))
             for i in tqdm(range(self.nHeight), desc='Height'):                
-                for j in tqdm(range(self.n_stars), desc='Stars'):                    
+                for j in tqdm(range(self.n_stars), desc='Stars', leave=False):                    
                     if (self.numerical_projection):
                         self.M[:,:,i,j] = projection.zernikeProjectionMatrixNumerical(self.n_zernike, self.beta[i,j], self.t[i,j], self.angle[i,j], verbose=True, radius=128, includePiston=self.add_piston)
                     else:
@@ -361,7 +377,7 @@ class Atmosphere(object):
         if (not self.M_sci_Computed):
             self.M_sci = np.zeros((self.n_zernike,self.n_zernike,self.nHeight,self.n_sci_directions))
             for i in tqdm(range(self.nHeight), desc='Height'):                
-                for j in tqdm(range(self.n_sci_directions), desc='Science directions'):                    
+                for j in tqdm(range(self.n_sci_directions), desc='Science directions', leave=False):                    
                     if (self.numerical_projection):
                         self.M_sci[:,:,i,j] = projection.zernikeProjectionMatrixNumerical(self.n_zernike, self.beta_sci[i,j], self.t_sci[i,j], self.angle_sci[i,j], verbose=True, radius=128, includePiston=self.add_piston)
                     else:
@@ -420,9 +436,9 @@ class Atmosphere(object):
         """
         self.covariance = np.zeros((self.n_zernike,self.n_zernike))
         for i in range(self.n_zernike):
-            ni, mi = wf.nollIndices(i+self.noll0)
+            ni, mi = util.nollIndices(i+self.noll0)
             for j in range(self.n_zernike):
-                nj, mj = wf.nollIndices(j+self.noll0)
+                nj, mj = util.nollIndices(j+self.noll0)
                 if (even(i - j)):
                     if (mi == mj):
                         phase = (-1.0)**(0.5*(ni+nj-2*mi))
@@ -495,15 +511,21 @@ class Atmosphere(object):
         
     def lock_points(self):
         xy = np.zeros((2, self.n_stars))
-        distance = self.t[-1,:] / np.max(self.t[-1,:])
+        if (self.n_stars == 1):
+            distance = 0.0
+        else:
+            distance = self.t[-1,:] / np.max(self.t[-1,:])
         xy[0,:] = 206265. * 0.5 * self.fov * distance * np.cos(-self.angle[-1,:])
         xy[1,:] = 206265. * 0.5 * self.fov * distance * np.sin(-self.angle[-1,:])
+        if (self.verbose):
+            for i in range(self.n_stars):
+                self.logger.info(f"  AO lock point {i} : ({xy[0,i]},{xy[1,i]})")
         return xy
 
     def sci_pointings(self):
         xy = np.zeros((2, self.n_sci_directions))
         xy[0,:] = 206265 * self.x_science.flatten()
-        xy[1,:] = 206265 * self.y_science.flatten()        
+        xy[1,:] = 206265 * self.y_science.flatten()      
         return xy
 
     def plot_pupils(self):
@@ -513,7 +535,10 @@ class Atmosphere(object):
           
         cmap = pl.get_cmap('tab10')
 
-        f, ax = pl.subplots(ncols=2, nrows=2, figsize=(10,10), constrained_layout=True)
+        ncols = np.ceil(np.sqrt(self.nHeight)).astype('int')
+        nrows = np.ceil(self.nHeight / ncols).astype('int')
+
+        f, ax = pl.subplots(ncols=ncols, nrows=nrows, figsize=(10,10), constrained_layout=True)
         for i in range(2):
             ax[i,0].set_ylabel('Distance [cm]')
         for i in range(2):

@@ -36,7 +36,12 @@ class Sun(object):
         self.logger.setLevel(logging.INFO)
         self.logger.handlers = []
 
-        ch = logging.StreamHandler()
+        ch = logging.StreamHandler(config.logfile)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(message)s')
+        ch.setFormatter(formatter)
+        self.logger.addHandler(ch)
+
+        ch = logging.StreamHandler()        
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(message)s')
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)

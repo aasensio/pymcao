@@ -1,6 +1,6 @@
 import numpy as np
 
-__all__ = ['aperture']
+__all__ = ['aperture', 'nollIndices']
 
 def aperture(npix=256, cent_obs=0.0, spider=0):
     """
@@ -35,3 +35,28 @@ def aperture(npix=256, cent_obs=0.0, spider=0):
         illum[:,start:start+int(spider)] = 0.0
 
     return illum
+
+def nollIndices(j):
+    """
+    Return the (n,m) pair of indices from a noll index j
+    
+    Args:
+        j (int): Noll index
+    
+    Returns:
+        int, int: (n,m) Zernike indices associated with the Noll index j
+    """
+    narr = np.arange(40)
+    jmax = (narr+1)*(narr+2)/2
+    wh = np.where(j <= jmax)
+    n = wh[0][0]
+    mprime = j - n*(n+1)/2
+    if ((n % 2) == 0):
+        m = 2*int(np.floor(mprime/2))
+    else:
+        m = 1 + 2*int(np.floor((mprime-1)/2))
+
+    if ((j % 2) != 0):
+        m *= -1
+
+    return n, m

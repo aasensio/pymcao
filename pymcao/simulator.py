@@ -3,19 +3,19 @@ import matplotlib.pyplot as pl
 from configobj import ConfigObj
 from astropy import units as u
 import copy
-import wfs
-import atmosphere
-import sun
+import pymcao.wfs as wfs
+import pymcao.atmosphere as atmosphere
+import pymcao.sun as sun
 import logging
 import time
 from tqdm import tqdm
 import threading
-import comm
-import dms
-import plots
-import science
-import fft
-import config
+import pymcao.comm as comm
+import pymcao.dms as dms
+import pymcao.plots as plots
+import pymcao.science as science
+import pymcao.fft as fft
+import pymcao.config as config
 
 try:
     from PyQt5.QtNetwork import QHostAddress, QTcpServer
@@ -33,19 +33,24 @@ class Simulator(object):
     def __init__(self, configuration_file=None):
         self.configuration_file = configuration_file
 
+        self.config = config.Config(configuration_file)
+
         # Logger
         self.logger = logging.getLogger("SIM  ")
         self.logger.setLevel(logging.INFO)
         self.logger.handlers = []
 
-        ch = logging.StreamHandler()
+        ch = logging.StreamHandler(self.config.logfile)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(message)s')
         ch.setFormatter(formatter)
         self.logger.addHandler(ch)
 
-        self.config = config.Config(configuration_file)
-        
-    def init_simulation(self):
+        ch = logging.StreamHandler()        
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(message)s')
+        ch.setFormatter(formatter)
+        self.logger.addHandler(ch)
+
+    def init_simulation(self, init_server=False):
         self.operation_mode = self.config.operation_mode
         self.n_zernike = self.config.n_zernike
         self.n_stars = self.config.n_stars
@@ -105,10 +110,11 @@ class Simulator(object):
         #---------------------------------------------
         # Instantiate communication mode if necessary 
         #---------------------------------------------              
-        if (self.operation_mode == 'mcao' or self.operation_mode == 'scao'):
-            self.event_comm = threading.Event()
-            self.comm = threading.Thread(target=comm.Comm, args=(self, self.config.cadence, self.event_comm))
-            self.comm.start()
+        if (init_server):
+            if (self.operation_mode == 'mcao' or self.operation_mode == 'scao'):
+                self.event_comm = threading.Event()
+                self.comm = threading.Thread(target=comm.Comm, args=(self, self.config.cadence, self.event_comm))
+                self.comm.start()
             
     def init_time(self):
         self.start_time = time.time()        
@@ -125,7 +131,13 @@ class Simulator(object):
         """
         Close all loggers after simulation ends
         """
-        for logger in [self.logger, self.sun.logger, self.atmosphere.logger]:
+        for logger in [self.logger, self.sun.logger, self.atmosphere.logger, \
+            self.sci.logger, self.config.logger, self.dms.logger]:
+            for handler in logger.handlers:
+                handler.close()
+                logger.removeHandler(handler)
+
+        for phase_screen in self.atmosphere.screens:
             for handler in logger.handlers:
                 handler.close()
                 logger.removeHandler(handler)
@@ -137,6 +149,14 @@ class Simulator(object):
 
     def finalize(self):
         self.close_loggers()
+
+    def start_step(self, silence = False):
+        if (silence):
+            for wfs in self.wfs:
+                wfs.logger.disabled = True
+            self.logger.disabled = True
+
+        self.logger.info("Frame")
             
     def frame_scao(self, silence = False, plot=False):
         """
@@ -163,14 +183,14 @@ class Simulator(object):
         self.atmosphere.move_screens()
 
         # Compute the wavefronts for all WFS
-        wavefront = self.atmosphere.generate_wfs()
-        images, images_sci = self.sun.new_image()
+        self.wavefront = self.atmosphere.generate_wfs()
+        self.images, self.images_sci = self.sun.new_image()
         
         # Set the image of the Sun in the WFS
-        self.wfs[0].set_image(images[0,:,:])
+        self.wfs[0].set_image(self.images[0,:,:])
 
         # Set wavefront
-        self.wfs[0].set_wavefront(wavefront[0,:])
+        self.wfs[0].set_wavefront(self.wavefront[0,:])
 
         # Compute subpupil PSFs and images
         self.wfs[0].generate_subpupil_psf()
@@ -178,6 +198,9 @@ class Simulator(object):
 
         # Measure correlation
         self.wfs[0].measure_wfs_correlation()
+
+        self.uncorrected_wavefront_sci = self.atmosphere.generate_science_wf()            
+        self.sci.degrade_image(self.images_sci, self.uncorrected_wavefront_sci)
 
         self.n_frame += 1
 
@@ -187,7 +210,6 @@ class Simulator(object):
 
         if (plot):
             plots.show_scao(self.wfs[0], save_results=True)
-
 
     def frame_mcao(self, silence = False, plot=False):
 
@@ -208,13 +230,13 @@ class Simulator(object):
         self.wavefront = self.atmosphere.generate_wfs()
 
         # Extract the images for the WFS and for the science camera
-        images, images_sci = self.sun.new_image()
+        self.images, self.images_sci = self.sun.new_image()
 
         self.wfs_zernike = np.zeros((self.n_stars, self.n_zernike))
         
         # Compute the wavefront for every direction
         for i in range(self.n_stars):
-            self.wfs[i].set_image(images[i,:,:])
+            self.wfs[i].set_image(self.images[i,:,:])
 
             # Set wavefront
             self.wfs[i].set_wavefront(self.wavefront[i,:])
@@ -236,7 +258,7 @@ class Simulator(object):
         # Compute science image if needed
         if (self.config.compute_science):
             self.uncorrected_wavefront_sci, self.wavefront_sci = self.atmosphere.generate_science_wf(self.dms)            
-            self.sci.degrade_image(self.uncorrected_wavefront_sci, self.wavefront_sci, images_sci)
+            self.sci.degrade_image(self.images_sci, self.uncorrected_wavefront_sci, self.wavefront_sci)
         
         if (plots):
             plots.show_mcao(self.wfs, self.dms, self.sci, self.atmosphere) 
@@ -256,7 +278,6 @@ class Simulator(object):
 
 
 if (__name__ == '__main__'):
-    # mcao = Simulator('sh_9x9.ini')
     mcao = Simulator('gregor.ini')
     mcao.init_simulation()
     mcao.init_time()

@@ -22,7 +22,6 @@ import numpy as np
 from math import factorial as fact
 import matplotlib.pyplot as plt
 from time import time as tm
-import wavefront as wf
 
 counter = 0
 
@@ -589,33 +588,33 @@ def zernIndex(j):
 
     return [n, m]
 
-if __name__ == "__main__":
-    import matplotlib.pyplot as pl
-    import time
+# if __name__ == "__main__":
+#     import matplotlib.pyplot as pl
+#     import time
 
-    n, m = zernIndex(182)
+#     n, m = zernIndex(182)
 
-    start = time.time()
-    for i in range(100):
-        tmp = wf.zernike(182, npix=int(2*100))
-    print(time.time() - start)
+#     start = time.time()
+#     for i in range(100):
+#         tmp = wf.zernike(182, npix=int(2*100))
+#     print(time.time() - start)
 
-    x = np.linspace(-1, 1, 200)
-    xx, yy = np.meshgrid(x, x)
-    rho = np.sqrt(xx ** 2 + yy ** 2)
-    theta = np.arctan2(yy, xx)
-    aperture_mask = rho < 1.0
+#     x = np.linspace(-1, 1, 200)
+#     xx, yy = np.meshgrid(x, x)
+#     rho = np.sqrt(xx ** 2 + yy ** 2)
+#     theta = np.arctan2(yy, xx)
+#     aperture_mask = rho < 1.0
 
-    z = ZernikeNaive(mask=[])
+#     z = ZernikeNaive(mask=[])
 
-    start = time.time()
-    for i in range(100):
-        tmp2 = z.Z_nm(n, m, rho, theta, True, 'Jacobi') * aperture_mask
-    print(time.time() - start)
+#     start = time.time()
+#     for i in range(100):
+#         tmp2 = z.Z_nm(n, m, rho, theta, True, 'Jacobi') * aperture_mask
+#     print(time.time() - start)
     
-    f, ax = pl.subplots(nrows=1, ncols=2)
-    ax[0].imshow(tmp, cmap=pl.cm.jet)
-    ax[1].imshow(tmp2, cmap=pl.cm.jet)
-    pl.show()
+#     f, ax = pl.subplots(nrows=1, ncols=2)
+#     ax[0].imshow(tmp, cmap=pl.cm.jet)
+#     ax[1].imshow(tmp2, cmap=pl.cm.jet)
+#     pl.show()
 
-    pass
+#     pass

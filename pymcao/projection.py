@@ -1,8 +1,10 @@
 import numpy as np
 import scipy.integrate as integ
 import scipy.special as sp
-import zern
+import pymcao.zern as zern
 from tqdm import tqdm
+
+__all__ = ['zernikeProjectionMatrix', 'zernikeProjectionMatrixNumerical']
 
 def _sign(x):
     if (x == 0):
